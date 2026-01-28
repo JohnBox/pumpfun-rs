@@ -34,6 +34,8 @@ pub struct CreateEvent {
     pub virtual_sol_reserves: u64,
     pub real_token_reserves: u64,
     pub token_total_supply: u64,
+    pub token_program: Pubkey,
+    pub mayhem_mode: bool,
 }
 
 /// Event emitted when a token is bought or sold
@@ -63,6 +65,8 @@ pub struct TradeEvent {
     pub total_claimed_tokens: u64,
     pub current_sol_volume: u64,
     pub last_update_timestamp: i64,
+    pub new_field: String,
+    pub mayhem_mode: bool,
 }
 
 /// Event emitted when a bonding curve operation completes
