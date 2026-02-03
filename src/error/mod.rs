@@ -30,7 +30,7 @@ pub enum ClientError {
     #[cfg(feature = "stream")]
     PubsubClientError(solana_client::pubsub_client::PubsubClientError),
     /// Error uploading metadata
-    UploadMetadataError(Box<dyn std::error::Error>),
+    UploadMetadataError(Box<dyn std::error::Error + Send + Sync>),
     /// Other error
     OtherError(String),
 }

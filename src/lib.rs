@@ -8,7 +8,10 @@ pub mod instructions;
 pub mod utils;
 
 use common::types::{Cluster, PriorityFee};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::{
+    nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction,
+    rpc_config::RpcSendTransactionConfig,
+};
 use solana_sdk::{
     compute_budget::ComputeBudgetInstruction,
     instruction::Instruction,
@@ -97,6 +100,46 @@ impl PumpFun {
         }
     }
 
+    /// Sends a transaction and waits for confirmation.
+    ///
+    /// Uses `skip_preflight` setting from cluster config to optionally skip
+    /// transaction simulation before sending (~50ms faster when skipped).
+    async fn send_and_confirm<T: SerializableTransaction>(
+        &self,
+        transaction: &T,
+    ) -> Result<Signature, error::ClientError> {
+        let signature = if self.cluster.skip_preflight {
+            // Skip preflight for faster submission - errors only detected after landing on-chain
+            let config = RpcSendTransactionConfig {
+                skip_preflight: true,
+                preflight_commitment: Some(self.cluster.commitment.commitment),
+                max_retries: Some(0), // No automatic retries for speed
+                ..Default::default()
+            };
+            let sig = self
+                .rpc
+                .send_transaction_with_config(transaction, config)
+                .await
+                .map_err(error::ClientError::SolanaClientError)?;
+
+            // Wait for confirmation with cluster's commitment level
+            self.rpc
+                .confirm_transaction_with_commitment(&sig, self.cluster.commitment)
+                .await
+                .map_err(error::ClientError::SolanaClientError)?;
+
+            sig
+        } else {
+            // Standard path with preflight simulation
+            self.rpc
+                .send_and_confirm_transaction(transaction)
+                .await
+                .map_err(error::ClientError::SolanaClientError)?
+        };
+
+        Ok(signature)
+    }
+
     /// Creates a new token with metadata by uploading metadata to IPFS and initializing on-chain accounts
     ///
     /// This method handles the complete process of creating a new token on Pump.fun:
@@ -183,11 +226,7 @@ impl PumpFun {
         .await?;
 
         // Send and confirm transaction
-        let signature = self
-            .rpc
-            .send_and_confirm_transaction(&transaction)
-            .await
-            .map_err(error::ClientError::SolanaClientError)?;
+        let signature = self.send_and_confirm(&transaction).await?;
 
         Ok(signature)
     }
@@ -304,11 +343,7 @@ impl PumpFun {
         .await?;
 
         // Send and confirm transaction
-        let signature = self
-            .rpc
-            .send_and_confirm_transaction(&transaction)
-            .await
-            .map_err(error::ClientError::SolanaClientError)?;
+        let signature = self.send_and_confirm(&transaction).await?;
 
         Ok(signature)
     }
@@ -408,11 +443,7 @@ impl PumpFun {
         .await?;
 
         // Send and confirm transaction
-        let signature = self
-            .rpc
-            .send_and_confirm_transaction(&transaction)
-            .await
-            .map_err(error::ClientError::SolanaClientError)?;
+        let signature = self.send_and_confirm(&transaction).await?;
 
         Ok(signature)
     }
@@ -509,11 +540,7 @@ impl PumpFun {
         .await?;
 
         // Send and confirm transaction
-        let signature = self
-            .rpc
-            .send_and_confirm_transaction(&transaction)
-            .await
-            .map_err(error::ClientError::SolanaClientError)?;
+        let signature = self.send_and_confirm(&transaction).await?;
 
         Ok(signature)
     }
@@ -780,37 +807,31 @@ impl PumpFun {
         slippage_basis_points: Option<u64>,
         token_program: &Pubkey,
     ) -> Result<Vec<Instruction>, error::ClientError> {
-        // Get accounts and calculate buy amounts
-        let global_account = self.get_global_account().await?;
-        let mut bonding_curve_account: Option<accounts::BondingCurveAccount> = None;
-        let buy_amount = {
-            let bonding_curve_pda = Self::get_bonding_curve_pda(&mint)
-                .ok_or(error::ClientError::BondingCurveNotFound)?;
-            if self.rpc.get_account(&bonding_curve_pda).await.is_err() {
-                global_account.get_initial_buy_price(amount_sol)
-            } else {
-                bonding_curve_account = self.get_bonding_curve_account(&mint).await.ok();
-                bonding_curve_account
-                    .as_ref()
-                    .unwrap()
-                    .get_buy_price(amount_sol)
-                    .map_err(error::ClientError::BondingCurveError)?
-            }
-        };
-        let buy_amount_with_slippage =
-            utils::calculate_with_slippage_buy(amount_sol, slippage_basis_points.unwrap_or(500));
-
         let mut instructions = Vec::new();
 
-        // Create Associated Token Account if needed
+        // Parallelize RPC calls: global account, bonding curve, and ATA check (if feature enabled)
+        // This saves ~100-200ms by avoiding sequential network round-trips
         #[cfg(feature = "create-ata")]
-        {
+        let (global_account, bonding_curve_account, _ata_exists) = {
             let ata: Pubkey = get_associated_token_address_with_program_id(
                 &self.payer.pubkey(),
                 &mint,
                 token_program,
             );
-            if self.rpc.get_account(&ata).await.is_err() {
+            // Run all three RPC calls in parallel using tokio::join! (infallible variant)
+            // We handle errors individually after to provide better error messages
+            let (global_result, bc_result, ata_result) = tokio::join!(
+                self.get_global_account(),
+                self.get_bonding_curve_account(&mint),
+                self.rpc.get_account(&ata)
+            );
+            let global = global_result?;
+            // Bonding curve may not exist for initial buys - that's ok
+            let bc = bc_result.ok();
+            let ata_exists = ata_result.is_ok();
+
+            // Create ATA if needed
+            if !ata_exists {
                 instructions.push(create_associated_token_account(
                     &self.payer.pubkey(),
                     &self.payer.pubkey(),
@@ -818,7 +839,32 @@ impl PumpFun {
                     token_program,
                 ));
             }
-        }
+            (global, bc, ata_exists)
+        };
+
+        #[cfg(not(feature = "create-ata"))]
+        let (global_account, bonding_curve_account) = {
+            // Run both RPC calls in parallel
+            let (global_result, bc_result) = tokio::join!(
+                self.get_global_account(),
+                self.get_bonding_curve_account(&mint)
+            );
+            let global = global_result?;
+            // Bonding curve may not exist for initial buys - that's ok
+            let bc = bc_result.ok();
+            (global, bc)
+        };
+
+        // Calculate buy amount based on whether bonding curve exists
+        let buy_amount = if let Some(ref bc) = bonding_curve_account {
+            bc.get_buy_price(amount_sol)
+                .map_err(error::ClientError::BondingCurveError)?
+        } else {
+            global_account.get_initial_buy_price(amount_sol)
+        };
+
+        let buy_amount_with_slippage =
+            utils::calculate_with_slippage_buy(amount_sol, slippage_basis_points.unwrap_or(500));
 
         // Add buy instruction
         instructions.push(instructions::buy(
@@ -894,28 +940,43 @@ impl PumpFun {
         slippage_basis_points: Option<u64>,
         token_program: &Pubkey,
     ) -> Result<Vec<Instruction>, error::ClientError> {
-        // Get ATA
+        // Get ATA address (local computation, no RPC)
         let ata: Pubkey = get_associated_token_address_with_program_id(
             &self.payer.pubkey(),
             &mint,
             token_program,
         );
 
-        // Get token balance
-        let token_balance = if amount_token.is_none() || cfg!(feature = "close-ata") {
-            // We need the balance if amount_token is None OR if the close-ata feature is enabled
-            let balance = self.rpc.get_token_account_balance(&ata).await?;
-            Some(balance.amount.parse::<u64>().unwrap())
+        // Determine if we need token balance (for selling all tokens or close-ata feature)
+        let need_balance = amount_token.is_none() || cfg!(feature = "close-ata");
+
+        // Parallelize all RPC calls: global account, bonding curve, and optionally token balance
+        // This saves ~100-200ms by avoiding sequential network round-trips
+        let (global_account, bonding_curve_account, token_balance) = if need_balance {
+            // Run all three RPC calls in parallel using tokio::join! (infallible variant)
+            // We handle errors individually since they have different error types
+            let (global_result, bc_result, balance_result) = tokio::join!(
+                self.get_global_account(),
+                self.get_bonding_curve_account(&mint),
+                self.rpc.get_token_account_balance(&ata)
+            );
+            let global = global_result?;
+            let bc = bc_result?;
+            let balance = balance_result?.amount.parse::<u64>().unwrap();
+            (global, bc, Some(balance))
         } else {
-            None
+            // No balance needed - just fetch global and bonding curve in parallel
+            let (global_result, bc_result) = tokio::join!(
+                self.get_global_account(),
+                self.get_bonding_curve_account(&mint)
+            );
+            (global_result?, bc_result?, None)
         };
 
         // Determine amount to sell
         let amount = amount_token.unwrap_or_else(|| token_balance.unwrap());
 
-        // Calculate min sol output
-        let global_account = self.get_global_account().await?;
-        let bonding_curve_account = self.get_bonding_curve_account(&mint).await?;
+        // Calculate min sol output with slippage
         let min_sol_output = bonding_curve_account
             .get_sell_price(amount, global_account.fee_basis_points)
             .map_err(error::ClientError::BondingCurveError)?;
@@ -942,47 +1003,38 @@ impl PumpFun {
         // Close account if balance equals amount
         #[cfg(feature = "close-ata")]
         {
-            // Token balance should be guaranteed to be available at this point
-            // due to our fetch logic in the beginning of the function
+            // Token balance is guaranteed to be available here due to our fetch logic above
             if let Some(balance) = token_balance {
                 // Only close the account if we're selling all tokens
+                // No need to check ATA existence - we just fetched the balance from it
                 if balance == amount {
-                    // Verify the token account exists before attempting to close it
-                    if self.rpc.get_account(&ata).await.is_ok() {
-                        // Create instruction to close the ATA using the appropriate token program
-                        let close_instruction =
-                            if *token_program == constants::accounts::TOKEN_2022_PROGRAM {
-                                spl_token_2022::instruction::close_account(
-                                    token_program,
-                                    &ata,
-                                    &self.payer.pubkey(),
-                                    &self.payer.pubkey(),
-                                    &[&self.payer.pubkey()],
-                                )
-                            } else {
-                                close_account(
-                                    token_program,
-                                    &ata,
-                                    &self.payer.pubkey(),
-                                    &self.payer.pubkey(),
-                                    &[&self.payer.pubkey()],
-                                )
-                            }
-                            .map_err(|err| {
-                                error::ClientError::OtherError(format!(
-                                    "Failed to create close account instruction: pubkey={}: {}",
-                                    ata, err
-                                ))
-                            })?;
+                    // Create instruction to close the ATA using the appropriate token program
+                    let close_instruction =
+                        if *token_program == constants::accounts::TOKEN_2022_PROGRAM {
+                            spl_token_2022::instruction::close_account(
+                                token_program,
+                                &ata,
+                                &self.payer.pubkey(),
+                                &self.payer.pubkey(),
+                                &[&self.payer.pubkey()],
+                            )
+                        } else {
+                            close_account(
+                                token_program,
+                                &ata,
+                                &self.payer.pubkey(),
+                                &self.payer.pubkey(),
+                                &[&self.payer.pubkey()],
+                            )
+                        }
+                        .map_err(|err| {
+                            error::ClientError::OtherError(format!(
+                                "Failed to create close account instruction: pubkey={}: {}",
+                                ata, err
+                            ))
+                        })?;
 
-                        instructions.push(close_instruction);
-                    } else {
-                        // Log warning but don't fail the transaction if account doesn't exist
-                        eprintln!(
-                            "Warning: Cannot close token account {}, it doesn't exist",
-                            ata
-                        );
-                    }
+                    instructions.push(close_instruction);
                 }
             } else {
                 // This case should not occur due to our balance fetch logic,

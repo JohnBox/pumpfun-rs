@@ -81,11 +81,16 @@ impl RpcEndpoint {
 /// * `rpc` - RPC endpoints for the cluster
 /// * `commitment` - Commitment level for confirmations
 /// * `priority_fee` - Priority fee configuration for transactions
+/// * `skip_preflight` - Whether to skip transaction simulation before sending (faster but no early error detection)
 #[derive(Debug, Clone)]
 pub struct Cluster {
     pub rpc: RpcEndpoint,
     pub commitment: CommitmentConfig,
     pub priority_fee: PriorityFee,
+    /// Skip preflight simulation for faster transaction submission (~50ms savings).
+    /// When true, transactions are sent directly without simulation.
+    /// Errors will only be detected after the transaction lands on-chain.
+    pub skip_preflight: bool,
 }
 
 impl Cluster {
@@ -100,7 +105,7 @@ impl Cluster {
     ///
     /// # Returns
     ///
-    /// A new `Cluster` instance with the specified configuration
+    /// A new `Cluster` instance with the specified configuration (preflight enabled by default)
     pub fn new(
         http: String,
         ws: String,
@@ -111,7 +116,22 @@ impl Cluster {
             rpc: RpcEndpoint { http, ws },
             commitment,
             priority_fee,
+            skip_preflight: false,
         }
+    }
+
+    /// Sets whether to skip preflight simulation for faster transaction submission
+    ///
+    /// # Arguments
+    ///
+    /// * `skip` - If true, skip preflight simulation (~50ms faster but no early error detection)
+    ///
+    /// # Returns
+    ///
+    /// Self with the updated skip_preflight setting (builder pattern)
+    pub fn with_skip_preflight(mut self, skip: bool) -> Self {
+        self.skip_preflight = skip;
+        self
     }
 
     /// Creates a configuration for the Solana mainnet-beta cluster
