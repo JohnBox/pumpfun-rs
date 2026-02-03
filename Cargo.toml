@@ -36,6 +36,7 @@ solana-client = "2.3.7"
 solana-sdk = "2.3.1"
 spl-associated-token-account = "7.0.0"
 spl-token = "8.0.0"
+spl-token-2022 = "8.0.0"
 tokio = "1.47.1"
 
 [dev-dependencies]

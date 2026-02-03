@@ -11,7 +11,7 @@ use solana_sdk::{
     signature::Keypair,
     signer::Signer,
 };
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::get_associated_token_address_with_program_id;
 
 /// Instruction data for buying tokens from a bonding curve
 ///
@@ -87,6 +87,7 @@ pub fn buy(
     mint: &Pubkey,
     fee_recipient: &Pubkey,
     creator: &Pubkey,
+    token_program: &Pubkey,
     args: Buy,
 ) -> Instruction {
     let bonding_curve: Pubkey = PumpFun::get_bonding_curve_pda(mint).unwrap();
@@ -99,11 +100,17 @@ pub fn buy(
             AccountMeta::new(*fee_recipient, false),
             AccountMeta::new_readonly(*mint, false),
             AccountMeta::new(bonding_curve, false),
-            AccountMeta::new(get_associated_token_address(&bonding_curve, mint), false),
-            AccountMeta::new(get_associated_token_address(&payer.pubkey(), mint), false),
+            AccountMeta::new(
+                get_associated_token_address_with_program_id(&bonding_curve, mint, token_program),
+                false,
+            ),
+            AccountMeta::new(
+                get_associated_token_address_with_program_id(&payer.pubkey(), mint, token_program),
+                false,
+            ),
             AccountMeta::new(payer.pubkey(), true),
             AccountMeta::new_readonly(constants::accounts::SYSTEM_PROGRAM, false),
-            AccountMeta::new_readonly(constants::accounts::TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(*token_program, false),
             AccountMeta::new(creator_vault, false),
             AccountMeta::new_readonly(constants::accounts::EVENT_AUTHORITY, false),
             AccountMeta::new_readonly(constants::accounts::PUMPFUN, false),

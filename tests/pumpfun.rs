@@ -1,5 +1,6 @@
 pub mod utils;
 
+use pumpfun::constants::accounts::TOKEN_PROGRAM;
 use pumpfun::utils::CreateTokenMetadata;
 use serial_test::serial;
 use solana_sdk::{native_token::sol_str_to_lamports, signer::Signer};
@@ -54,7 +55,12 @@ async fn test_02_create_token() {
 
         let signature = ctx
             .client
-            .create(mint.insecure_clone(), metadata.clone(), None)
+            .create(
+                mint.insecure_clone(),
+                metadata.clone(),
+                None,
+                &TOKEN_PROGRAM,
+            )
             .await
             .expect("Failed to create token");
         println!("Signature: {}", signature);
@@ -91,6 +97,7 @@ async fn test_03_buy_token() {
             track_volume,
             None,
             None,
+            &TOKEN_PROGRAM,
         )
         .await
         .expect("Failed to buy tokens");
@@ -110,7 +117,7 @@ async fn test_04_sell_token() {
 
     let signature = ctx
         .client
-        .sell(mint, None, None, None)
+        .sell(mint, None, None, None, &TOKEN_PROGRAM)
         .await
         .expect("Failed to sell tokens");
     println!("Signature: {}", signature);

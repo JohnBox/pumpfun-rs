@@ -11,7 +11,7 @@ use solana_sdk::{
     signature::Keypair,
     signer::Signer,
 };
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::get_associated_token_address_with_program_id;
 
 /// Instruction data for creating a new token
 ///
@@ -78,7 +78,12 @@ impl Create {
 /// 12. Rent sysvar (readonly)
 /// 13. Event authority (readonly)
 /// 14. Pump.fun program ID (readonly)
-pub fn create(payer: &Keypair, mint: &Keypair, args: Create) -> Instruction {
+pub fn create(
+    payer: &Keypair,
+    mint: &Keypair,
+    token_program: &Pubkey,
+    args: Create,
+) -> Instruction {
     let bonding_curve: Pubkey = PumpFun::get_bonding_curve_pda(&mint.pubkey()).unwrap();
     Instruction::new_with_bytes(
         constants::accounts::PUMPFUN,
@@ -88,7 +93,11 @@ pub fn create(payer: &Keypair, mint: &Keypair, args: Create) -> Instruction {
             AccountMeta::new(PumpFun::get_mint_authority_pda(), false),
             AccountMeta::new(bonding_curve, false),
             AccountMeta::new(
-                get_associated_token_address(&bonding_curve, &mint.pubkey()),
+                get_associated_token_address_with_program_id(
+                    &bonding_curve,
+                    &mint.pubkey(),
+                    token_program,
+                ),
                 false,
             ),
             AccountMeta::new_readonly(PumpFun::get_global_pda(), false),
@@ -96,7 +105,7 @@ pub fn create(payer: &Keypair, mint: &Keypair, args: Create) -> Instruction {
             AccountMeta::new(PumpFun::get_metadata_pda(&mint.pubkey()), false),
             AccountMeta::new(payer.pubkey(), true),
             AccountMeta::new_readonly(constants::accounts::SYSTEM_PROGRAM, false),
-            AccountMeta::new_readonly(constants::accounts::TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(*token_program, false),
             AccountMeta::new_readonly(constants::accounts::ASSOCIATED_TOKEN_PROGRAM, false),
             AccountMeta::new_readonly(constants::accounts::RENT, false),
             AccountMeta::new_readonly(constants::accounts::EVENT_AUTHORITY, false),

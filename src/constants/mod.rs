@@ -47,6 +47,9 @@ pub mod accounts {
     /// Token Program ID
     pub const TOKEN_PROGRAM: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
+    /// Token-2022 Program ID
+    pub const TOKEN_2022_PROGRAM: Pubkey = pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+
     /// Global Volume Accumulator
     pub const GLOBAL_VOLUME_ACCUMULATOR: Pubkey =
         pubkey!("Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y");

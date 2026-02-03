@@ -16,7 +16,7 @@ use solana_sdk::{
     signature::{Keypair, Signature},
     signer::Signer,
 };
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::get_associated_token_address_with_program_id;
 #[cfg(feature = "create-ata")]
 use spl_associated_token_account::instruction::create_associated_token_account;
 #[cfg(feature = "close-ata")]
@@ -156,6 +156,7 @@ impl PumpFun {
         mint: Keypair,
         metadata: utils::CreateTokenMetadata,
         priority_fee: Option<PriorityFee>,
+        token_program: &Pubkey,
     ) -> Result<Signature, error::ClientError> {
         // First upload metadata and image to IPFS
         let ipfs: utils::TokenMetadataResponse = utils::create_token_metadata(metadata)
@@ -167,7 +168,7 @@ impl PumpFun {
         let mut instructions = Self::get_priority_fee_instructions(&priority_fee);
 
         // Add create token instruction
-        let create_ix = self.get_create_instruction(&mint, ipfs);
+        let create_ix = self.get_create_instruction(&mint, ipfs, token_program);
         instructions.push(create_ix);
 
         // Create and sign transaction
@@ -264,6 +265,7 @@ impl PumpFun {
         track_volume: Option<bool>,
         slippage_basis_points: Option<u64>,
         priority_fee: Option<PriorityFee>,
+        token_program: &Pubkey,
     ) -> Result<Signature, error::ClientError> {
         // Upload metadata to IPFS first
         let ipfs: utils::TokenMetadataResponse = utils::create_token_metadata(metadata)
@@ -275,7 +277,7 @@ impl PumpFun {
         let mut instructions = Self::get_priority_fee_instructions(&priority_fee);
 
         // Add create token instruction
-        let create_ix = self.get_create_instruction(&mint, ipfs);
+        let create_ix = self.get_create_instruction(&mint, ipfs, token_program);
         instructions.push(create_ix);
 
         // Add buy instruction
@@ -285,6 +287,7 @@ impl PumpFun {
                 amount_sol,
                 track_volume,
                 slippage_basis_points,
+                token_program,
             )
             .await?;
         instructions.extend(buy_ix);
@@ -375,6 +378,7 @@ impl PumpFun {
         track_volume: Option<bool>,
         slippage_basis_points: Option<u64>,
         priority_fee: Option<PriorityFee>,
+        token_program: &Pubkey,
     ) -> Result<Signature, error::ClientError> {
         // Add priority fee if provided or default to cluster priority fee
         let priority_fee = priority_fee.unwrap_or(self.cluster.priority_fee);
@@ -382,7 +386,13 @@ impl PumpFun {
 
         // Add buy instruction
         let buy_ix = self
-            .get_buy_instructions(mint, amount_sol, track_volume, slippage_basis_points)
+            .get_buy_instructions(
+                mint,
+                amount_sol,
+                track_volume,
+                slippage_basis_points,
+                token_program,
+            )
             .await?;
         instructions.extend(buy_ix);
 
@@ -475,6 +485,7 @@ impl PumpFun {
         amount_token: Option<u64>,
         slippage_basis_points: Option<u64>,
         priority_fee: Option<PriorityFee>,
+        token_program: &Pubkey,
     ) -> Result<Signature, error::ClientError> {
         // Add priority fee if provided or default to cluster priority fee
         let priority_fee = priority_fee.unwrap_or(self.cluster.priority_fee);
@@ -482,7 +493,7 @@ impl PumpFun {
 
         // Add sell instruction
         let sell_ix = self
-            .get_sell_instructions(mint, amount_token, slippage_basis_points)
+            .get_sell_instructions(mint, amount_token, slippage_basis_points, token_program)
             .await?;
         instructions.extend(sell_ix);
 
@@ -700,10 +711,12 @@ impl PumpFun {
         &self,
         mint: &Keypair,
         ipfs: utils::TokenMetadataResponse,
+        token_program: &Pubkey,
     ) -> Instruction {
         instructions::create(
             &self.payer,
             mint,
+            token_program,
             instructions::Create {
                 name: ipfs.metadata.name,
                 symbol: ipfs.metadata.symbol,
@@ -765,6 +778,7 @@ impl PumpFun {
         amount_sol: u64,
         track_volume: Option<bool>,
         slippage_basis_points: Option<u64>,
+        token_program: &Pubkey,
     ) -> Result<Vec<Instruction>, error::ClientError> {
         // Get accounts and calculate buy amounts
         let global_account = self.get_global_account().await?;
@@ -791,13 +805,17 @@ impl PumpFun {
         // Create Associated Token Account if needed
         #[cfg(feature = "create-ata")]
         {
-            let ata: Pubkey = get_associated_token_address(&self.payer.pubkey(), &mint);
+            let ata: Pubkey = get_associated_token_address_with_program_id(
+                &self.payer.pubkey(),
+                &mint,
+                token_program,
+            );
             if self.rpc.get_account(&ata).await.is_err() {
                 instructions.push(create_associated_token_account(
                     &self.payer.pubkey(),
                     &self.payer.pubkey(),
                     &mint,
-                    &constants::accounts::TOKEN_PROGRAM,
+                    token_program,
                 ));
             }
         }
@@ -808,6 +826,7 @@ impl PumpFun {
             &mint,
             &global_account.fee_recipient,
             &bonding_curve_account.map_or(self.payer.pubkey(), |bc| bc.creator),
+            token_program,
             instructions::Buy {
                 amount: buy_amount,
                 max_sol_cost: buy_amount_with_slippage,
@@ -873,9 +892,14 @@ impl PumpFun {
         mint: Pubkey,
         amount_token: Option<u64>,
         slippage_basis_points: Option<u64>,
+        token_program: &Pubkey,
     ) -> Result<Vec<Instruction>, error::ClientError> {
         // Get ATA
-        let ata: Pubkey = get_associated_token_address(&self.payer.pubkey(), &mint);
+        let ata: Pubkey = get_associated_token_address_with_program_id(
+            &self.payer.pubkey(),
+            &mint,
+            token_program,
+        );
 
         // Get token balance
         let token_balance = if amount_token.is_none() || cfg!(feature = "close-ata") {
@@ -908,6 +932,7 @@ impl PumpFun {
             &mint,
             &global_account.fee_recipient,
             &bonding_curve_account.creator,
+            token_program,
             instructions::Sell {
                 amount,
                 min_sol_output,
@@ -922,24 +947,33 @@ impl PumpFun {
             if let Some(balance) = token_balance {
                 // Only close the account if we're selling all tokens
                 if balance == amount {
-                    let token_program = constants::accounts::TOKEN_PROGRAM;
-
                     // Verify the token account exists before attempting to close it
                     if self.rpc.get_account(&ata).await.is_ok() {
-                        // Create instruction to close the ATA
-                        let close_instruction = close_account(
-                            &token_program,
-                            &ata,
-                            &self.payer.pubkey(),
-                            &self.payer.pubkey(),
-                            &[&self.payer.pubkey()],
-                        )
-                        .map_err(|err| {
-                            error::ClientError::OtherError(format!(
-                                "Failed to create close account instruction: pubkey={}: {}",
-                                ata, err
-                            ))
-                        })?;
+                        // Create instruction to close the ATA using the appropriate token program
+                        let close_instruction =
+                            if *token_program == constants::accounts::TOKEN_2022_PROGRAM {
+                                spl_token_2022::instruction::close_account(
+                                    token_program,
+                                    &ata,
+                                    &self.payer.pubkey(),
+                                    &self.payer.pubkey(),
+                                    &[&self.payer.pubkey()],
+                                )
+                            } else {
+                                close_account(
+                                    token_program,
+                                    &ata,
+                                    &self.payer.pubkey(),
+                                    &self.payer.pubkey(),
+                                    &[&self.payer.pubkey()],
+                                )
+                            }
+                            .map_err(|err| {
+                                error::ClientError::OtherError(format!(
+                                    "Failed to create close account instruction: pubkey={}: {}",
+                                    ata, err
+                                ))
+                            })?;
 
                         instructions.push(close_instruction);
                     } else {
