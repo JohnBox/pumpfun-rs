@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_client::nonblocking::rpc_client::RpcClient;
 #[cfg(not(feature = "versioned-tx"))]
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{instruction::Instruction, signature::Keypair, signer::Signer};
@@ -11,6 +11,15 @@ use solana_sdk::{
 };
 
 use crate::error;
+
+/// The transaction type used by the SDK.
+/// - `Transaction` when compiled without `versioned-tx` feature
+/// - `VersionedTransaction` when compiled with `versioned-tx` feature
+#[cfg(not(feature = "versioned-tx"))]
+pub type SdkTransaction = Transaction;
+
+#[cfg(feature = "versioned-tx")]
+pub type SdkTransaction = VersionedTransaction;
 
 /// Constructs a signed transaction from a set of instructions and signers
 ///
@@ -113,7 +122,7 @@ pub async fn get_transaction(
     #[cfg(feature = "versioned-tx")] address_lookup_table_accounts: Option<
         &[AddressLookupTableAccount],
     >,
-) -> Result<impl SerializableTransaction, error::ClientError> {
+) -> Result<SdkTransaction, error::ClientError> {
     // Get recent blockhash for transaction validity window
     let recent_blockhash = rpc
         .get_latest_blockhash()
