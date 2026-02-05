@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use base64::Engine;
 use borsh::{BorshDeserialize, BorshSerialize};
 use futures::StreamExt;
@@ -15,6 +13,24 @@ use tokio::task::JoinHandle;
 
 use super::types::Cluster;
 use crate::{constants, error};
+
+/// Error type for event parsing failures
+#[derive(Debug)]
+pub enum ParseEventError {
+    Base64(base64::DecodeError),
+    DataTooShort,
+    Deserialize(std::io::Error),
+}
+
+impl std::fmt::Display for ParseEventError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Base64(e) => write!(f, "base64 decode error: {}", e),
+            Self::DataTooShort => write!(f, "data too short for discriminator"),
+            Self::Deserialize(e) => write!(f, "deserialize error: {}", e),
+        }
+    }
+}
 
 /// Event emitted when a new token is created
 ///
@@ -113,8 +129,7 @@ pub enum PumpFunEvent {
     Trade(TradeEvent),
     Complete(CompleteEvent),
     SetParams(SetParamsEvent),
-    Unhandled(String, Vec<u8>), // For unhandled events
-    Unknown(String, Vec<u8>),   // For unknown events
+    Unknown(Vec<u8>),
 }
 
 /// Represents an active WebSocket subscription to Pump.fun events
@@ -147,64 +162,42 @@ impl Drop for Subscription {
 ///
 /// # Arguments
 ///
-/// * `signature` - Transaction signature associated with the event
 /// * `data` - Base64-encoded event data from program logs
 ///
 /// # Returns
 ///
 /// Returns a parsed PumpFunEvent if successful, or an error if parsing fails
-pub fn parse_event(
-    signature: &str,
-    data: &str,
-) -> Result<PumpFunEvent, Box<dyn Error + Send + Sync>> {
+pub fn parse_event(data: &str) -> Result<PumpFunEvent, ParseEventError> {
     // Decode base64
-    let decoded = base64::engine::general_purpose::STANDARD.decode(data)?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(ParseEventError::Base64)?;
 
-    // Get event type from the first 8 bytes
+    // Get event type from first 8 bytes as u64
     if decoded.len() < 8 {
-        return Err(format!("Data too short to contain discriminator: {}", data).into());
+        return Err(ParseEventError::DataTooShort);
     }
 
-    let discriminator = &decoded[..8];
+    // SAFETY: we just verified len >= 8
+    let discriminator = u64::from_le_bytes(unsafe {
+        decoded.get_unchecked(..8).try_into().unwrap_unchecked()
+    });
+    let payload = unsafe { decoded.get_unchecked(8..) };
+
     match discriminator {
-        // CreateEvent
-        [27, 114, 169, 77, 222, 235, 99, 118] => Ok(PumpFunEvent::Create(
-            CreateEvent::try_from_slice(&decoded[8..])
-                .map_err(|e| format!("Failed to decode CreateEvent: {}", e))?,
+        0x7663ebde4da9721b => Ok(PumpFunEvent::Create(
+            CreateEvent::try_from_slice(payload).map_err(ParseEventError::Deserialize)?,
         )),
-        // TradeEvent
-        [189, 219, 127, 211, 78, 230, 97, 238] => Ok(PumpFunEvent::Trade(
-            TradeEvent::try_from_slice(&decoded[8..])
-                .map_err(|e| format!("Failed to decode TradeEvent: {}", e))?,
+        0xee61e64ed37fdbbd => Ok(PumpFunEvent::Trade(
+            TradeEvent::try_from_slice(payload).map_err(ParseEventError::Deserialize)?,
         )),
-        // CompleteEvent
-        [95, 114, 97, 156, 212, 46, 152, 8] => Ok(PumpFunEvent::Complete(
-            CompleteEvent::try_from_slice(&decoded[8..])
-                .map_err(|e| format!("Failed to decode CompleteEvent: {}", e))?,
+        0x08982ed49c61725f => Ok(PumpFunEvent::Complete(
+            CompleteEvent::try_from_slice(payload).map_err(ParseEventError::Deserialize)?,
         )),
-        // SetParamsEvent
-        [223, 195, 159, 246, 62, 48, 143, 131] => Ok(PumpFunEvent::SetParams(
-            SetParamsEvent::try_from_slice(&decoded[8..])
-                .map_err(|e| format!("Failed to decode SetParamsEvent: {}", e))?,
+        0x838f303ef69fc3df => Ok(PumpFunEvent::SetParams(
+            SetParamsEvent::try_from_slice(payload).map_err(ParseEventError::Deserialize)?,
         )),
-        // Other unhandled Pump.fun events
-        [64, 69, 192, 104, 29, 30, 25, 107]
-        | [245, 59, 70, 34, 75, 185, 109, 92]
-        | [147, 250, 108, 120, 247, 29, 67, 222]
-        | [79, 172, 246, 49, 205, 91, 206, 232]
-        | [146, 159, 189, 172, 146, 88, 56, 244]
-        | [122, 2, 127, 1, 14, 191, 12, 175]
-        | [189, 233, 93, 185, 92, 148, 234, 148]
-        | [97, 97, 215, 144, 93, 146, 22, 124]
-        | [134, 36, 13, 72, 232, 101, 130, 216]
-        | [237, 52, 123, 37, 245, 251, 72, 210]
-        | [142, 203, 6, 32, 127, 105, 191, 162]
-        | [197, 122, 167, 124, 116, 81, 91, 255]
-        | [182, 195, 137, 42, 35, 206, 207, 247] => {
-            Ok(PumpFunEvent::Unhandled(signature.to_string(), decoded))
-        }
-        // Unknown event type
-        _ => Ok(PumpFunEvent::Unknown(signature.to_string(), decoded)),
+        _ => Ok(PumpFunEvent::Unknown(decoded)),
     }
 }
 
@@ -223,10 +216,7 @@ pub fn parse_event(
 /// * `mentioned` - Optional public key to filter events by mentions. If None, subscribes to all Pump.fun events
 /// * `commitment` - Optional commitment level for the subscription. If None, uses the
 ///   default from the cluster configuration
-/// * `callback` - A function that will be called for each event with the following parameters:
-///   * `signature`: The transaction signature as a String
-///   * `event`: The parsed PumpFunEvent if successful, or None if parsing failed
-///   * `error`: Any error that occurred during parsing, or None if successful
+/// * `callback` - A function that will be called for each event with the parsed result
 ///
 /// # Returns
 ///
@@ -256,11 +246,10 @@ pub fn parse_event(
 ///     );
 ///
 ///     // Define callback to process events
-///     let callback = |signature, event, error| {
-///         if let Some(event) = event {
-///             println!("Event received: {:#?} in tx: {}", event, signature);
-///         } else if let Some(err) = error {
-///             eprintln!("Error parsing event in tx {}: {}", signature, err);
+///     let callback = |result| {
+///         match result {
+///             Ok(event) => println!("Event received: {:#?}", event),
+///             Err(err) => eprintln!("Error parsing event: {}", err),
 ///         }
 ///     };
 ///
@@ -279,7 +268,7 @@ pub async fn subscribe<F>(
     callback: F,
 ) -> Result<Subscription, error::ClientError>
 where
-    F: Fn(String, Option<PumpFunEvent>, Option<Box<dyn Error + Send + Sync>>) + Send + Sync + 'static,
+    F: Fn(Result<PumpFunEvent, ParseEventError>) + Send + Sync + 'static,
 {
     // Initialize PubsubClient
     let ws_url = &cluster.rpc.ws;
@@ -288,11 +277,11 @@ where
         .map_err(error::ClientError::PubsubClientError)?;
 
     let (tx, _) = mpsc::channel(1);
-    let (cb_tx, mut cb_rx) = mpsc::channel::<(String, Option<PumpFunEvent>, Option<Box<dyn Error + Send + Sync>>)>(1000);
+    let (cb_tx, mut cb_rx) = mpsc::channel::<Result<PumpFunEvent, ParseEventError>>(1000);
 
     tokio::spawn(async move {
-        while let Some((sig, event, err)) = cb_rx.recv().await {
-            callback(sig, event, err);
+        while let Some(result) = cb_rx.recv().await {
+            callback(result);
         }
     });
 
@@ -310,28 +299,23 @@ where
             .await
             .unwrap();
 
+        const PREFIX: &[u8] = b"Program data: ";
+        const PREFIX_LEN: usize = PREFIX.len();
+
         // Process incoming logs
         while let Some(log) = stream.next().await {
-            // Get the signature of the transaction
-            let signature = &log.value.signature;
-            // Check for logs with "Program data:" prefix
-            for log_line in &log.value.logs {
-                // Extract base64-encoded data
-                if let Some(data) = log_line.strip_prefix("Program data: ") {
-                    match parse_event(signature, data) {
-                        Ok(event) => {
-                            let _ = cb_tx
-                                .send((signature.to_string(), Some(event), None))
-                                .await;
-                        }
-                        Err(err) => {
-                            let _ = cb_tx
-                                .send((signature.to_string(), None, Some(err)))
-                                .await;
-                        }
-                    }
-                }
-            }
+            log.value
+                .logs
+                .iter()
+                // SAFETY: filter_map verifies string starts with PREFIX before slicing
+                .filter_map(|line| {
+                    line.as_bytes()
+                        .starts_with(PREFIX)
+                        .then(|| unsafe { line.get_unchecked(PREFIX_LEN..) })
+                })
+                .for_each(|data| {
+                    let _ = cb_tx.try_send(parse_event(data));
+                });
         }
     });
 
@@ -368,17 +352,18 @@ mod tests {
         // Define the callback to store events
         let callback = {
             let events = Arc::clone(&events);
-            move |signature: String,
-                  event: Option<PumpFunEvent>,
-                  err: Option<Box<dyn Error + Send + Sync>>| {
-                if let Some(event) = event {
-                    let events = Arc::clone(&events);
-                    tokio::spawn(async move {
-                        let mut events = events.lock().await;
-                        events.push(event);
-                    });
-                } else if err.is_some() {
-                    eprintln!("Error in subscription: signature={}", signature);
+            move |result: Result<PumpFunEvent, ParseEventError>| {
+                match result {
+                    Ok(event) => {
+                        let events = Arc::clone(&events);
+                        tokio::spawn(async move {
+                            let mut events = events.lock().await;
+                            events.push(event);
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("Error in subscription: {}", e);
+                    }
                 }
             }
         };
