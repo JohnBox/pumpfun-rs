@@ -55,8 +55,9 @@ use crate::error;
 /// #     utils::transaction::get_transaction,
 /// #     PumpFun,
 /// # };
+/// # use solana_commitment_config::CommitmentConfig;
 /// # use solana_sdk::{
-/// #     commitment_config::CommitmentConfig, instruction::Instruction,
+/// #     instruction::Instruction,
 /// #     message::AddressLookupTableAccount, signature::Keypair,
 /// # };
 /// # use std::sync::Arc;

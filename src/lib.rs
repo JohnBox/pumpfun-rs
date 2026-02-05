@@ -12,8 +12,8 @@ use solana_client::{
     nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction,
     rpc_config::RpcSendTransactionConfig,
 };
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_sdk::{
-    compute_budget::ComputeBudgetInstruction,
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
@@ -37,7 +37,8 @@ use utils::transaction::get_transaction;
 ///
 /// ```no_run
 /// use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-/// use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+/// use solana_commitment_config::CommitmentConfig;
+/// use solana_sdk::signature::Keypair;
 /// use std::sync::Arc;
 ///
 /// // Create a new client connected to devnet
@@ -76,7 +77,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-    /// use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+    /// use solana_commitment_config::CommitmentConfig;
+    /// use solana_sdk::signature::Keypair;
     /// use std::sync::Arc;
     ///
     /// let payer = Arc::new(Keypair::new());
@@ -170,7 +172,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}, utils::CreateTokenMetadata};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::signature::Keypair;
     /// # use std::sync::Arc;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -189,7 +192,7 @@ impl PumpFun {
     ///     website: Some("https://example.com".to_string()),
     /// };
     ///
-    /// let signature = client.create(mint, metadata, None).await?;
+    /// let signature = client.create(mint, metadata, None, &spl_token::ID).await?;
     /// println!("Token created! Signature: {}", signature);
     /// # Ok(())
     /// # }
@@ -267,7 +270,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}, utils::CreateTokenMetadata};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, native_token::sol_to_lamports, signature::Keypair};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::{native_token::LAMPORTS_PER_SOL, signature::Keypair};
     /// # use std::sync::Arc;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -287,11 +291,11 @@ impl PumpFun {
     /// };
     ///
     /// // Create token and buy 0.1 SOL worth with 5% slippage tolerance
-    /// let amount_sol = sol_to_lamports(0.1f64); // 0.1 SOL in lamports
+    /// let amount_sol = (0.1 * LAMPORTS_PER_SOL as f64) as u64; // 0.1 SOL in lamports
     /// let slippage_bps = Some(500); // 5%
     /// let track_volume = Some(true); // Track this initial buy in volume stats
     ///
-    /// let signature = client.create_and_buy(mint, metadata, amount_sol, track_volume, slippage_bps, None).await?;
+    /// let signature = client.create_and_buy(mint, metadata, amount_sol, track_volume, slippage_bps, None, &spl_token::ID).await?;
     /// println!("Token created and bought! Signature: {}", signature);
     /// # Ok(())
     /// # }
@@ -386,7 +390,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, native_token::sol_to_lamports, pubkey, signature::Keypair};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey, signature::Keypair};
     /// # use std::sync::Arc;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -397,11 +402,11 @@ impl PumpFun {
     /// let token_mint = pubkey!("SoMeTokenM1ntAddr3ssXXXXXXXXXXXXXXXXXXXXXXX");
     ///
     /// // Buy 0.01 SOL worth of tokens with 3% max slippage
-    /// let amount_sol = sol_to_lamports(0.01f64); // 0.01 SOL in lamports
+    /// let amount_sol = (0.01 * LAMPORTS_PER_SOL as f64) as u64; // 0.01 SOL in lamports
     /// let slippage_bps = Some(300); // 3%
     /// let track_volume = Some(true); // Track this buy in volume stats
     ///
-    /// let signature = client.buy(token_mint, amount_sol, track_volume, slippage_bps, None).await?;
+    /// let signature = client.buy(token_mint, amount_sol, track_volume, slippage_bps, None, &spl_token::ID).await?;
     /// println!("Tokens purchased! Signature: {}", signature);
     /// # Ok(())
     /// # }
@@ -487,7 +492,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair, pubkey};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::{signature::Keypair, pubkey};
     /// # use std::sync::Arc;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -501,11 +507,11 @@ impl PumpFun {
     /// let amount_tokens = Some(1000);
     /// let slippage_bps = Some(200); // 2%
     ///
-    /// let signature = client.sell(token_mint, amount_tokens, slippage_bps, None).await?;
+    /// let signature = client.sell(token_mint, amount_tokens, slippage_bps, None, &spl_token::ID).await?;
     /// println!("Tokens sold! Signature: {}", signature);
     ///
     /// // Or sell all tokens with default slippage (5%)
-    /// let signature = client.sell(token_mint, None, None, None).await?;
+    /// let signature = client.sell(token_mint, None, None, None, &spl_token::ID).await?;
     /// println!("All tokens sold! Signature: {}", signature);
     /// # Ok(())
     /// # }
@@ -584,7 +590,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::signature::Keypair;
     /// # use std::{sync::Arc, error::Error};
     /// #
     /// # async fn example() -> Result<(), Box<dyn Error>> {
@@ -628,7 +635,7 @@ impl PumpFun {
     pub async fn subscribe<F>(
         &self,
         mentioned: Option<String>,
-        commitment: Option<solana_sdk::commitment_config::CommitmentConfig>,
+        commitment: Option<solana_commitment_config::CommitmentConfig>,
         callback: F,
     ) -> Result<common::stream::Subscription, error::ClientError>
     where
@@ -708,10 +715,11 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}, utils};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::signature::Keypair;
     /// # use std::sync::Arc;
     /// #
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     /// # let payer = Arc::new(Keypair::new());
     /// # let commitment = CommitmentConfig::confirmed();
     /// # let cluster = Cluster::devnet(commitment, PriorityFee::default());
@@ -730,7 +738,7 @@ impl PumpFun {
     ///     }
     /// ).await?;
     ///
-    /// let create_instruction = client.get_create_instruction(&mint, metadata_response);
+    /// let create_instruction = client.get_create_instruction(&mint, metadata_response, &spl_token::ID);
     /// # Ok(())
     /// # }
     /// ```
@@ -781,7 +789,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, native_token::sol_to_lamports, signature::Keypair, pubkey};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::{native_token::LAMPORTS_PER_SOL, signature::Keypair, pubkey};
     /// # use std::sync::Arc;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -791,11 +800,11 @@ impl PumpFun {
     /// # let client = PumpFun::new(payer, cluster);
     /// #
     /// let mint = pubkey!("TokenM1ntPubk3yXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
-    /// let amount_sol = sol_to_lamports(0.01); // 0.01 SOL
+    /// let amount_sol = (0.01 * LAMPORTS_PER_SOL as f64) as u64; // 0.01 SOL
     /// let slippage_bps = Some(300); // 3%
     /// let track_volume = Some(true); // Track this buy in volume stats
     ///
-    /// let buy_instructions = client.get_buy_instructions(mint, amount_sol, track_volume, slippage_bps).await?;
+    /// let buy_instructions = client.get_buy_instructions(mint, amount_sol, track_volume, slippage_bps, &spl_token::ID).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -913,7 +922,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair, pubkey};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::{signature::Keypair, pubkey};
     /// # use std::sync::Arc;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -926,10 +936,10 @@ impl PumpFun {
     /// let amount_tokens = Some(1000); // Sell 1000 tokens
     /// let slippage_bps = Some(200); // 2%
     ///
-    /// let sell_instructions = client.get_sell_instructions(mint, amount_tokens, slippage_bps).await?;
+    /// let sell_instructions = client.get_sell_instructions(mint, amount_tokens, slippage_bps, &spl_token::ID).await?;
     ///
     /// // Or to sell all tokens:
-    /// let sell_all_instructions = client.get_sell_instructions(mint, None, None).await?;
+    /// let sell_all_instructions = client.get_sell_instructions(mint, None, None, &spl_token::ID).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -1185,7 +1195,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::signature::Keypair;
     /// # use std::sync::Arc;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let payer = Arc::new(Keypair::new());
@@ -1239,7 +1250,8 @@ impl PumpFun {
     ///
     /// ```no_run
     /// # use pumpfun::{PumpFun, common::types::{Cluster, PriorityFee}};
-    /// # use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair, pubkey};
+    /// # use solana_commitment_config::CommitmentConfig;
+    /// # use solana_sdk::{signature::Keypair, pubkey};
     /// # use std::sync::Arc;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let payer = Arc::new(Keypair::new());

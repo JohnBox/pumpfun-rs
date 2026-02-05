@@ -7,10 +7,8 @@ use pumpfun::{
     common::types::{Cluster, PriorityFee},
     PumpFun,
 };
-use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    signature::{read_keypair_file, Keypair},
-};
+use solana_commitment_config::CommitmentConfig;
+use solana_sdk::signature::{read_keypair_file, Keypair};
 
 // Load the default keypair with error handling
 fn load_default_keypair() -> Result<Keypair, String> {

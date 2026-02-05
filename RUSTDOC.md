@@ -53,9 +53,8 @@ use pumpfun::{
     utils::CreateTokenMetadata,
     PumpFun,
 };
+use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    native_token::sol_to_lamports,
     native_token::LAMPORTS_PER_SOL,
     signature::{Keypair, Signature},
     signer::Signer,
@@ -95,11 +94,11 @@ let fee = Some(PriorityFee {
 });
 
 // Create token with metadata
-let signature = client.create(mint.insecure_clone(), metadata.clone(), fee).await.unwrap();
+let signature = client.create(mint.insecure_clone(), metadata.clone(), fee, &spl_token::ID).await.unwrap();
 println!("Create signature: {}", signature);
 
 // Create and buy tokens with metadata
-let signature = client.create_and_buy(mint.insecure_clone(), metadata.clone(), sol_to_lamports(1f64), track_volume, None, fee).await.unwrap();
+let signature = client.create_and_buy(mint.insecure_clone(), metadata.clone(), LAMPORTS_PER_SOL, track_volume, None, fee, &spl_token::ID).await.unwrap();
 println!("Created and buy signature: {}", signature);
 
 // Print the curve
@@ -107,11 +106,11 @@ let curve = client.get_bonding_curve_account(&mint.pubkey()).await.unwrap();
 println!("Bonding curve: {:#?}", curve);
 
 // Buy tokens (ATA will be created automatically if needed)
-let signature = client.buy(mint.pubkey(), sol_to_lamports(1f64), track_volume, None, fee).await.unwrap();
+let signature = client.buy(mint.pubkey(), LAMPORTS_PER_SOL, track_volume, None, fee, &spl_token::ID).await.unwrap();
 println!("Buy signature: {}", signature);
 
 // Sell tokens (sell all tokens)
-let signature = client.sell(mint.pubkey(), None, None, fee).await.unwrap();
+let signature = client.sell(mint.pubkey(), None, None, fee, &spl_token::ID).await.unwrap();
 println!("Sell signature: {}", signature);
 
 // Subscribe to real-time events with the stream feature

@@ -27,20 +27,23 @@ stream = ["dep:base64", "dep:futures"]
 
 [dependencies]
 base64 = { version = "0.22.1", optional = true }
-borsh = { version = "1.5.7", features = ["derive"] }
+borsh = { version = "1.6.0", features = ["derive"] }
 futures = { version = "0.3.31", optional = true }
 isahc = "1.7.2"
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.132"
-solana-client = "2.3.7"
-solana-sdk = "2.3.1"
-spl-associated-token-account = "7.0.0"
-spl-token = "8.0.0"
-spl-token-2022 = "8.0.0"
-tokio = "1.47.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+solana-client = "3.1.8"
+solana-commitment-config = "3.1.0"
+solana-compute-budget-interface = "3.0.0"
+solana-sdk = "3.0.0"
+spl-associated-token-account = "8.0.0"
+spl-token = "9.0.0"
+spl-token-2022 = "10.0.0"
+tokio = "1.49.0"
 
 [dev-dependencies]
 dirs = "6.0.0"
-serial_test = "3.2.0"
-tempfile = "3.20.0"
+serial_test = "3.3.1"
+solana-commitment-config = "3.1.0"
+tempfile = "3.24.0"
 tokio-test = "0.4.4"

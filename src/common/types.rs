@@ -10,7 +10,7 @@
 //! and managing transaction parameters.
 
 use serde::{Deserialize, Serialize};
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_commitment_config::CommitmentConfig;
 
 /// Configuration for priority fee compute unit parameters
 ///

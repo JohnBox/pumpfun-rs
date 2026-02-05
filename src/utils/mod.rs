@@ -82,7 +82,7 @@ pub struct CreateTokenMetadata {
 /// ```rust,no_run
 /// use pumpfun::utils::{CreateTokenMetadata, create_token_metadata};
 ///
-/// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+/// # async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 /// let metadata = CreateTokenMetadata {
 ///     name: "My Token".to_string(),
 ///     symbol: "MT".to_string(),
@@ -180,13 +180,13 @@ pub async fn create_token_metadata(
 /// # Example
 /// ```rust
 /// use pumpfun::utils;
-/// use solana_sdk::native_token::{sol_to_lamports, LAMPORTS_PER_SOL};
+/// use solana_sdk::native_token::LAMPORTS_PER_SOL;
 ///
 /// let amount = LAMPORTS_PER_SOL; // 1 SOL in lamports
 /// let slippage = 100; // 1% slippage tolerance
 ///
 /// let max_amount = utils::calculate_with_slippage_buy(amount, slippage);
-/// assert_eq!(max_amount, sol_to_lamports(1.01f64)); // 1.01 SOL
+/// assert_eq!(max_amount, LAMPORTS_PER_SOL + LAMPORTS_PER_SOL / 100); // 1.01 SOL
 /// ```
 pub fn calculate_with_slippage_buy(amount: u64, basis_points: u64) -> u64 {
     amount + (amount * basis_points) / 10000
@@ -204,13 +204,13 @@ pub fn calculate_with_slippage_buy(amount: u64, basis_points: u64) -> u64 {
 /// # Example
 /// ```rust
 /// use pumpfun::utils;
-/// use solana_sdk::native_token::{sol_to_lamports, LAMPORTS_PER_SOL};
+/// use solana_sdk::native_token::LAMPORTS_PER_SOL;
 ///
 /// let amount = LAMPORTS_PER_SOL; // 1 SOL in lamports
 /// let slippage = 100; // 1% slippage tolerance
 ///
 /// let min_amount = utils::calculate_with_slippage_sell(amount, slippage);
-/// assert_eq!(min_amount, sol_to_lamports(0.99f64)); // 0.99 SOL
+/// assert_eq!(min_amount, LAMPORTS_PER_SOL - LAMPORTS_PER_SOL / 100); // 0.99 SOL
 /// ```
 pub fn calculate_with_slippage_sell(amount: u64, basis_points: u64) -> u64 {
     amount - (amount * basis_points) / 10000
