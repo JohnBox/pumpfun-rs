@@ -682,7 +682,7 @@ impl PumpFun {
     /// let compute_instructions: Vec<Instruction> = PumpFun::get_priority_fee_instructions(&priority_fee);
     /// ```
     pub fn get_priority_fee_instructions(priority_fee: &PriorityFee) -> Vec<Instruction> {
-        let mut instructions = Vec::new();
+        let mut instructions = Vec::with_capacity(2);
 
         if let Some(limit) = priority_fee.unit_limit {
             let limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(limit);
@@ -816,7 +816,7 @@ impl PumpFun {
         slippage_basis_points: Option<u64>,
         token_program: &Pubkey,
     ) -> Result<Vec<Instruction>, error::ClientError> {
-        let mut instructions = Vec::new();
+        let mut instructions = Vec::with_capacity(2);
 
         // Parallelize RPC calls: global account, bonding curve, and ATA check (if feature enabled)
         // This saves ~100-200ms by avoiding sequential network round-trips
@@ -995,7 +995,7 @@ impl PumpFun {
             slippage_basis_points.unwrap_or(500),
         );
 
-        let mut instructions = Vec::new();
+        let mut instructions = Vec::with_capacity(2);
 
         // Add sell instruction
         instructions.push(instructions::sell(

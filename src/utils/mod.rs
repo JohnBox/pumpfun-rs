@@ -102,7 +102,9 @@ pub async fn create_token_metadata(
     metadata: CreateTokenMetadata,
 ) -> Result<TokenMetadataResponse, Box<dyn std::error::Error + Send + Sync>> {
     let boundary = "------------------------f4d9c2e8b7a5310f";
-    let mut body = Vec::new();
+    // Pre-allocate: ~1KB for form fields + file size estimate
+    let file_size_hint = std::fs::metadata(&metadata.file).map(|m| m.len() as usize).unwrap_or(0);
+    let mut body = Vec::with_capacity(1024 + file_size_hint);
 
     // Helper function to append form data
     fn append_text_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
@@ -140,7 +142,8 @@ pub async fn create_token_metadata(
 
     // Read the file contents
     let mut file = File::open(&metadata.file)?;
-    let mut file_contents = Vec::new();
+    let file_size = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+    let mut file_contents = Vec::with_capacity(file_size);
     file.read_to_end(&mut file_contents)?;
     body.extend_from_slice(&file_contents);
 
