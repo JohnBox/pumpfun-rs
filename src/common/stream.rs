@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use solana_client::{
     nonblocking::pubsub_client::PubsubClient,
     rpc_config::{RpcTransactionLogsConfig, RpcTransactionLogsFilter},
-    rpc_response::{Response, RpcLogsResponse},
 };
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
@@ -228,7 +227,6 @@ pub fn parse_event(
 ///   * `signature`: The transaction signature as a String
 ///   * `event`: The parsed PumpFunEvent if successful, or None if parsing failed
 ///   * `error`: Any error that occurred during parsing, or None if successful
-///   * `response`: The complete RPC logs response for additional context
 ///
 /// # Returns
 ///
@@ -258,7 +256,7 @@ pub fn parse_event(
 ///     );
 ///
 ///     // Define callback to process events
-///     let callback = |signature, event, error, _| {
+///     let callback = |signature, event, error| {
 ///         if let Some(event) = event {
 ///             println!("Event received: {:#?} in tx: {}", event, signature);
 ///         } else if let Some(err) = error {
@@ -281,14 +279,7 @@ pub async fn subscribe<F>(
     callback: F,
 ) -> Result<Subscription, error::ClientError>
 where
-    F: Fn(
-            String,
-            Option<PumpFunEvent>,
-            Option<Box<dyn Error + Send + Sync>>,
-            Response<RpcLogsResponse>,
-        ) + Send
-        + Sync
-        + 'static,
+    F: Fn(String, Option<PumpFunEvent>, Option<Box<dyn Error + Send + Sync>>) + Send + Sync + 'static,
 {
     // Initialize PubsubClient
     let ws_url = &cluster.rpc.ws;
@@ -297,11 +288,11 @@ where
         .map_err(error::ClientError::PubsubClientError)?;
 
     let (tx, _) = mpsc::channel(1);
-    let (cb_tx, mut cb_rx) = mpsc::channel(1000);
+    let (cb_tx, mut cb_rx) = mpsc::channel::<(String, Option<PumpFunEvent>, Option<Box<dyn Error + Send + Sync>>)>(1000);
 
     tokio::spawn(async move {
-        while let Some((sig, event, err, log)) = cb_rx.recv().await {
-            callback(sig, event, err, log);
+        while let Some((sig, event, err)) = cb_rx.recv().await {
+            callback(sig, event, err);
         }
     });
 
@@ -330,12 +321,12 @@ where
                     match parse_event(signature, data) {
                         Ok(event) => {
                             let _ = cb_tx
-                                .send((signature.to_string(), Some(event), None, log.clone()))
+                                .send((signature.to_string(), Some(event), None))
                                 .await;
                         }
                         Err(err) => {
                             let _ = cb_tx
-                                .send((signature.to_string(), None, Some(err), log.clone()))
+                                .send((signature.to_string(), None, Some(err)))
                                 .await;
                         }
                     }
@@ -379,8 +370,7 @@ mod tests {
             let events = Arc::clone(&events);
             move |signature: String,
                   event: Option<PumpFunEvent>,
-                  err: Option<Box<dyn Error + Send + Sync>>,
-                  _: Response<RpcLogsResponse>| {
+                  err: Option<Box<dyn Error + Send + Sync>>| {
                 if let Some(event) = event {
                     let events = Arc::clone(&events);
                     tokio::spawn(async move {
