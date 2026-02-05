@@ -601,13 +601,13 @@ impl PumpFun {
     /// # let client = PumpFun::new(payer, cluster);
     /// #
     /// // Subscribe to token events
-    /// let subscription = client.subscribe(None, None, |signature, event, error, _| {
-    ///     match event {
-    ///         Some(pumpfun::common::stream::PumpFunEvent::Create(create_event)) => {
+    /// let subscription = client.subscribe(None, None, |result| {
+    ///     match result {
+    ///         Ok(pumpfun::common::stream::PumpFunEvent::Create(create_event)) => {
     ///             println!("New token created: {} ({})", create_event.name, create_event.symbol);
     ///             println!("Mint address: {}", create_event.mint);
     ///         },
-    ///         Some(pumpfun::common::stream::PumpFunEvent::Trade(trade_event)) => {
+    ///         Ok(pumpfun::common::stream::PumpFunEvent::Trade(trade_event)) => {
     ///             let action = if trade_event.is_buy { "bought" } else { "sold" };
     ///             println!(
     ///                 "User {} {} {} tokens for {} SOL",
@@ -617,12 +617,8 @@ impl PumpFun {
     ///                 trade_event.sol_amount as f64 / 1_000_000_000.0
     ///             );
     ///         },
-    ///         Some(event) => println!("Other event received: {:#?}", event),
-    ///         None => {
-    ///             if let Some(err) = error {
-    ///                 eprintln!("Error parsing event in tx {}: {}", signature, err);
-    ///             }
-    ///         }
+    ///         Ok(event) => println!("Other event received: {:#?}", event),
+    ///         Err(err) => eprintln!("Error parsing event: {}", err),
     ///     }
     /// }).await?;
     ///
@@ -639,12 +635,8 @@ impl PumpFun {
         callback: F,
     ) -> Result<common::stream::Subscription, error::ClientError>
     where
-        F: Fn(
-                String,
-                Option<common::stream::PumpFunEvent>,
-                Option<Box<dyn std::error::Error + Send + Sync>>,
-                solana_client::rpc_response::Response<solana_client::rpc_response::RpcLogsResponse>,
-            ) + Send
+        F: Fn(Result<common::stream::PumpFunEvent, common::stream::ParseEventError>)
+            + Send
             + Sync
             + 'static,
     {
