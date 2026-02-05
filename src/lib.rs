@@ -1075,10 +1075,9 @@ impl PumpFun {
     /// let global_pda: Pubkey = PumpFun::get_global_pda();
     /// println!("Global state account: {}", global_pda);
     /// ```
+    #[inline]
     pub fn get_global_pda() -> Pubkey {
-        let seeds: &[&[u8]; 1] = &[constants::seeds::GLOBAL_SEED];
-        let program_id: &Pubkey = &constants::accounts::PUMPFUN;
-        Pubkey::find_program_address(seeds, program_id).0
+        constants::pdas::GLOBAL
     }
 
     /// Gets the Program Derived Address (PDA) for the mint authority
@@ -1100,10 +1099,9 @@ impl PumpFun {
     /// let mint_authority: Pubkey = PumpFun::get_mint_authority_pda();
     /// println!("Mint authority account: {}", mint_authority);
     /// ```
+    #[inline]
     pub fn get_mint_authority_pda() -> Pubkey {
-        let seeds: &[&[u8]; 1] = &[constants::seeds::MINT_AUTHORITY_SEED];
-        let program_id: &Pubkey = &constants::accounts::PUMPFUN;
-        Pubkey::find_program_address(seeds, program_id).0
+        constants::pdas::MINT_AUTHORITY
     }
 
     /// Gets the Program Derived Address (PDA) for a token's bonding curve account

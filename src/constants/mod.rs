@@ -28,6 +28,17 @@ pub mod seeds {
     pub const CREATOR_VAULT_SEED: &[u8] = b"creator-vault";
 }
 
+/// Precomputed PDAs (Program Derived Addresses) for static seeds
+pub mod pdas {
+    use solana_sdk::{pubkey, pubkey::Pubkey};
+
+    /// Global state PDA - derived from seed "global" and PUMPFUN program ID
+    pub const GLOBAL: Pubkey = pubkey!("4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf");
+
+    /// Mint authority PDA - derived from seed "mint-authority" and PUMPFUN program ID
+    pub const MINT_AUTHORITY: Pubkey = pubkey!("TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM");
+}
+
 /// Constants related to program accounts and authorities
 pub mod accounts {
     use solana_sdk::{pubkey, pubkey::Pubkey};
