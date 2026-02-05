@@ -135,21 +135,13 @@ pub enum PumpFunEvent {
 /// Represents an active WebSocket subscription to Pump.fun events
 ///
 /// This struct manages the lifecycle of an event subscription, automatically
-/// unsubscribing when dropped to ensure proper cleanup of resources.
+/// cleaning up when dropped.
 pub struct Subscription {
-    pub task: JoinHandle<()>,
-    pub unsubscribe: Box<dyn Fn() + Send>,
-}
-
-impl Subscription {
-    pub fn new(task: JoinHandle<()>, unsubscribe: Box<dyn Fn() + Send>) -> Self {
-        Subscription { task, unsubscribe }
-    }
+    task: JoinHandle<()>,
 }
 
 impl Drop for Subscription {
     fn drop(&mut self) {
-        (self.unsubscribe)();
         self.task.abort();
     }
 }
@@ -276,7 +268,6 @@ where
         .await
         .map_err(error::ClientError::PubsubClientError)?;
 
-    let (tx, _) = mpsc::channel(1);
     let (cb_tx, mut cb_rx) = mpsc::channel::<Result<PumpFunEvent, ParseEventError>>(1000);
 
     tokio::spawn(async move {
@@ -319,12 +310,7 @@ where
         }
     });
 
-    Ok(Subscription::new(
-        task,
-        Box::new(move || {
-            let _ = tx.try_send(());
-        }),
-    ))
+    Ok(Subscription { task })
 }
 
 #[cfg(test)]
